@@ -1,0 +1,11 @@
+[package]
+name = "youmu"
+version = "0.1.0"
+authors = ["Thog <me@thog.eu>"]
+
+[dependencies]
+log = "0.4"
+env_logger = "0.5.10"
+serenity = "0.5"
+dotenv = "0.13.0"
+lazy_static = "1.0"
