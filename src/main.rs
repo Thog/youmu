@@ -65,11 +65,8 @@ lazy_static! {
 
 impl Handler {
     fn send_message_safe(&self, message: String, channel_id: ChannelId) {
-        match channel_id.say(message) {
-            Err(error) => {
-                warn!("Error while sending message: {:?}", error);
-            }
-            _ => {}
+        if let Err(error) = channel_id.say(message) {
+            warn!("Error while sending message: {:?}", error);
         }
     }
 
@@ -106,12 +103,11 @@ impl Handler {
                             member_roles
                                 .iter()
                                 .filter(|r| COLOUR_LIST.contains(&r.name.as_str()))
-                                .for_each(|r| match member.remove_role(r) {
-                                    Err(error) => {
+                                .for_each(|r| {
+                                    if let Err(error) = member.remove_role(r) {
                                         warn!("CANNO REMOVE ROLE:");
                                         warn!("Details: {:?}", error);
                                     }
-                                    _ => {}
                                 });
 
                             match member.add_role(role) {
@@ -165,7 +161,7 @@ impl Handler {
                             .icon_url("http://i.imgur.com/6rDYlAI.png")
                     }).title("Commands:")
                         .description("Note: All commands are case sensitive.")
-                        .colour(0xCB8B83)
+                        .colour(0x00CB_8B83)
                         .field(".help", "Gives you the list of commands, as shown here.", false)
                         .field(".colour <colour>", "Changes colour for the user. No argument or invalid argument will remove your current color and give you the list of colors to choose from.", false)
                         .field(".color <color>", "Does the same thing as .colour, but for y'all Americans.", false)
@@ -175,15 +171,12 @@ impl Handler {
     }
 
     fn cmd_leave(&self, _ctx: Context, message: Message) {
-        match message.guild_id.unwrap().to_guild_cached() {
-            Some(arc) => {
-                let guild = arc.read();
-                if guild.owner_id == message.author.id {
-                    message.channel_id.say("Bye!").ok();
-                    guild.leave().ok();
-                }
+        if let Some(arc) = message.guild_id.unwrap().to_guild_cached() {
+            let guild = arc.read();
+            if guild.owner_id == message.author.id {
+                message.channel_id.say("Bye!").ok();
+                guild.leave().ok();
             }
-            _ => {}
         }
     }
 }
