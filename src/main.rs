@@ -96,7 +96,7 @@ impl Handler {
                     message.channel_id,
                 );
             }
-            Some(index) => match message.guild_id().unwrap().find() {
+            Some(index) => match message.guild_id.unwrap().to_guild_cached() {
                 Some(arc) => {
                     let color_name = COLOUR_LIST[index];
                     match arc.read().role_by_name(color_name) {
@@ -175,7 +175,7 @@ impl Handler {
     }
 
     fn cmd_leave(&self, _ctx: Context, message: Message) {
-        match message.guild_id().unwrap().find() {
+        match message.guild_id.unwrap().to_guild_cached() {
             Some(arc) => {
                 let guild = arc.read();
                 if guild.owner_id == message.author.id {
@@ -192,7 +192,7 @@ impl EventHandler for Handler {
     fn message(&self, ctx: Context, message: Message) {
         let msg = message.content_safe();
         let mut iterator: SplitWhitespace = msg.split_whitespace();
-        match (iterator.next(), message.guild_id()) {
+        match (iterator.next(), message.guild_id) {
             (Some(".color"), Some(_)) => self.cmd_colour(ctx, message, iterator, "Color"),
             (Some(".colour"), Some(_)) => self.cmd_colour(ctx, message, iterator, "Colour"),
             (Some(".help"), _) => self.cmd_help(ctx, message),
