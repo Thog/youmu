@@ -1,20 +1,18 @@
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate lazy_static;
-
-extern crate dotenv;
-extern crate env_logger;
-extern crate serenity;
-
+use serenity::async_trait;
+use serenity::client::{Client, Context, EventHandler};
 use serenity::model::channel::Message;
-use serenity::model::id::*;
-use serenity::prelude::*;
-use std::env;
-use std::str::SplitWhitespace;
+use serenity::framework::standard::{
+    Args,
+    StandardFramework,
+    CommandResult,
+    macros::{
+        command,
+        group
+    }
+};
 
-struct Handler;
+use std::env;
+use lazy_static::lazy_static;
 
 lazy_static! {
     static ref COLOUR_LIST: Vec<&'static str> = {
@@ -63,146 +61,131 @@ lazy_static! {
     };
 }
 
-impl Handler {
-    fn send_message_safe(&self, message: String, channel_id: ChannelId) {
-        if let Err(error) = channel_id.say(message) {
-            warn!("Error while sending message: {:?}", error);
-        }
+#[group]
+#[commands(color, colour, leave)]
+struct General;
+
+struct Handler;
+
+#[async_trait]
+impl EventHandler for Handler {}
+
+#[tokio::main]
+async fn main() {
+    let framework = StandardFramework::new()
+        .configure(|c| c.prefix("."))
+        .group(&GENERAL_GROUP);
+
+    // Login with a bot token from the environment
+    let token = env::var("DISCORD_TOKEN").expect("token");
+    let mut client = Client::builder(token)
+        .event_handler(Handler)
+        .framework(framework)
+        .await
+        .expect("Error creating client");
+
+    // start listening for events by starting a single shard
+    if let Err(why) = client.start().await {
+        println!("An error occurred while running the client: {:?}", why);
     }
+}
 
-    fn cmd_colour(
-        &self,
-        _ctx: Context,
-        message: Message,
-        colour_iter: SplitWhitespace,
-        lang_preference: &str,
-    ) {
-        let args: Vec<&str> = colour_iter.collect();
-        let arg_str = args.as_slice().join(" ");
-        let index: Option<usize> = COLOUR_LIST
-            .iter()
-            .position(|&r| r.to_lowercase() == arg_str.to_lowercase());
+async fn handle_color(ctx: &Context, msg: &Message, args: Args, lang_preference: &str) -> CommandResult {
+    let arg_str = args.message();
 
-        match index {
-            None => {
-                self.send_message_safe(
-                    format!(
-                        "That is not a valid {} choice. Choices: http://i.imgur.com/PHnCiei.png",
-                        lang_preference
-                    ),
-                    message.channel_id,
-                );
-            }
-            Some(index) => match message.guild_id.unwrap().to_guild_cached() {
-                Some(arc) => {
-                    let color_name = COLOUR_LIST[index];
-                    match arc.read().role_by_name(color_name) {
-                        Some(role) => {
-                            let mut member = message.member().unwrap();
-                            let member_roles = member.roles().unwrap();
-                            member_roles
-                                .iter()
-                                .filter(|r| COLOUR_LIST.contains(&r.name.as_str()))
-                                .for_each(|r| {
-                                    if let Err(error) = member.remove_role(r) {
-                                        warn!("CANNO REMOVE ROLE:");
-                                        warn!("Details: {:?}", error);
-                                    }
-                                });
+    let index: Option<usize> = COLOUR_LIST
+    .iter()
+    .position(|&r| r.to_lowercase() == arg_str.to_lowercase());
 
-                            match member.add_role(role) {
-                                Err(error) => {
-                                    warn!("CANNO ADD ROLE:");
-                                    warn!("Details: {:?}", error);
-                                    self.send_message_safe(
-                                        format!(
-                                            "Error while changing {0} for user {1}, contact the bot owner.",
-                                            lang_preference, message.author.name
-                                        ),
-                                        message.channel_id,
-                                    );
-                                }
-                                _ => {
-                                    self.send_message_safe(
-                                        format!(
-                                            "{0} for **{1}** changed to **{2}**!",
-                                            lang_preference, message.author.name, color_name
-                                        ),
-                                        message.channel_id,
-                                    );
-                                }
+    match index {
+        None => {
+            msg.reply(
+                ctx,
+                format!(
+                    "That is not a valid {} choice. Choices: http://i.imgur.com/PHnCiei.png",
+                    lang_preference
+                ),
+            ).await?;
+        }
+        Some(index) => match msg.guild_id.unwrap().to_guild_cached(&ctx).await {
+            Some(guild) => {
+                let color_name = COLOUR_LIST[index];
+                match guild.role_by_name(color_name) {
+                    Some(role) => {
+                        let mut member = msg.member(&ctx).await?;
+                        let member_roles = member.roles(&ctx).await;
+                        
+                        for role in member_roles.unwrap().iter().filter(|r| COLOUR_LIST.contains(&r.name.as_str())) {
+                            if let Err(error) = member.remove_role(&ctx, role).await {
+                                println!("CANNO REMOVE ROLE:");
+                                println!("Details: {:?}", error);
                             }
                         }
-                        _ => {
-                            self.send_message_safe(
-                                format!(
-                                    "Missing role {} in this guild, contact an admin.",
-                                    color_name
-                                ),
-                                message.channel_id,
-                            );
+
+                        match member.add_role(&ctx, role).await {
+                            Err(error) => {
+                                println!("CANNO ADD ROLE:");
+                                println!("Details: {:?}", error);
+                                msg.reply(
+                                    ctx,
+                                    format!(
+                                        "Error while changing {0} for user {1}, contact the bot owner.",
+                                        lang_preference, msg.author.name
+                                    ),
+                                ).await?;
+                            }
+                            _ => {
+                                msg.reply(
+                                    ctx,
+                                    format!(
+                                        "{0} for **{1}** changed to **{2}**!",
+                                        lang_preference, msg.author.name, color_name
+                                    ),
+                                ).await?;
+                            }
                         }
                     }
+                    _ => {
+                        msg.reply(
+                            ctx,
+                            format!(
+                                "Missing role {} in this guild, contact an admin.",
+                                color_name
+                            ),
+                        ).await?;
+                    }
                 }
-                _ => {
-                    warn!("GUILD not in cache! HOW COULD WE RECEIVE THIS?");
-                }
-            },
-        }
-    }
-
-    fn cmd_help(&self, _ctx: Context, message: Message) {
-        message
-            .channel_id
-            .send_message(|m| {
-                m.embed(|e| {
-                    e.author(|a| {
-                        a.name("YoumuBot Help")
-                            .icon_url("http://i.imgur.com/6rDYlAI.png")
-                    }).title("Commands:")
-                        .description("Note: All commands are case sensitive.")
-                        .colour(0x00CB_8B83)
-                        .field(".help", "Gives you the list of commands, as shown here.", false)
-                        .field(".colour <colour>", "Changes colour for the user. No argument or invalid argument will remove your current color and give you the list of colors to choose from.", false)
-                        .field(".color <color>", "Does the same thing as .colour, but for y'all Americans.", false)
-                })
-            })
-            .ok();
-    }
-
-    fn cmd_leave(&self, _ctx: Context, message: Message) {
-        if let Some(arc) = message.guild_id.unwrap().to_guild_cached() {
-            let guild = arc.read();
-            if guild.owner_id == message.author.id {
-                message.channel_id.say("Bye!").ok();
-                guild.leave().ok();
             }
+            _ => {
+                println!("GUILD not in cache! HOW COULD WE RECEIVE THIS?");
+            }
+        },
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn color(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    handle_color(ctx, msg, args, "Color").await
+}
+
+#[command]
+#[only_in(guilds)]
+async fn colour(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    handle_color(ctx, msg, args, "Colour").await
+}
+
+#[command]
+#[only_in(guilds)]
+async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
+    if let Some(guild) = msg.guild_id.unwrap().to_guild_cached(&ctx).await {
+        if guild.owner_id == msg.author.id {
+            msg.reply(ctx, "Bye!").await?;
+            guild.leave(&ctx).await?;
         }
     }
-}
 
-impl EventHandler for Handler {
-    fn message(&self, ctx: Context, message: Message) {
-        let msg = message.content_safe();
-        let mut iterator: SplitWhitespace = msg.split_whitespace();
-        match (iterator.next(), message.guild_id) {
-            (Some(".color"), Some(_)) => self.cmd_colour(ctx, message, iterator, "Color"),
-            (Some(".colour"), Some(_)) => self.cmd_colour(ctx, message, iterator, "Colour"),
-            (Some(".help"), _) => self.cmd_help(ctx, message),
-            (Some(".leave"), Some(_)) => self.cmd_leave(ctx, message),
-            _ => {}
-        };
-    }
-}
-
-fn main() {
-    dotenv::dotenv().ok();
-    env_logger::init();
-
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let mut client = Client::new(&token, Handler).expect("Err creating client");
-
-    if let Err(why) = client.start() {
-        println!("Client error: {:?}", why);
-    }
+    Ok(())
 }
